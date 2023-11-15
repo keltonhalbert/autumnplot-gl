@@ -1,76 +1,70 @@
-#extension GL_OES_standard_derivatives : enable
-#define MAX_N_CONTOURS 40
+#version 300 es
 
-varying highp vec2 v_tex_coord;
-varying highp float v_grid_cell_size;
-varying highp float v_map_scale_fac;
+#define MAX_N_CONTOURS 64
+
+in highp vec2 v_tex_coord;
+in highp float v_grid_cell_size;
+in highp float v_map_scale_fac;
 
 uniform sampler2D u_fill_sampler;
-uniform highp float u_contour_interval;
-uniform highp float u_contour_levels[MAX_N_CONTOURS];
+
+uniform lowp float u_contour_levels[MAX_N_CONTOURS];
 uniform int u_num_contours;
-uniform lowp float u_line_cutoff;
-uniform lowp vec3 u_color;
-uniform lowp vec2 u_step_size;
+//uniform highp vec2 u_step_size;
 uniform lowp float u_zoom_fac;
 
+precision highp float;
+out highp vec4 fragColor;
+
 void main() {
-    highp float field_val = texture2D(u_fill_sampler, v_tex_coord).r;
 
-    // Find the gradient magnitude of the grid (the y component divides by 2 to cheat for high latitudes)
-    lowp vec2 ihat = vec2(u_step_size.x, 0.0);
-    lowp vec2 jhat = vec2(0.0, u_step_size.y);
-    highp float fv_xp1 = texture2D(u_fill_sampler, v_tex_coord + ihat).r;
-    highp float fv_xm1 = texture2D(u_fill_sampler, v_tex_coord - ihat).r;
-    highp float fv_yp1 = texture2D(u_fill_sampler, v_tex_coord + jhat).r;
-    highp float fv_ym1 = texture2D(u_fill_sampler, v_tex_coord - jhat).r;
-    highp float fwidth_field = sqrt(((fv_xp1 - fv_xm1) * (fv_xp1 - fv_xm1) + (fv_yp1 - fv_ym1) * (fv_yp1 - fv_ym1)) / (5e5 * v_grid_cell_size));
+	int contour_found = 0;
+	lowp float base_width = 0.25*(log(u_zoom_fac) + 1.0);
+	lowp float line_width = 1.5 * base_width;
+	lowp vec2 ihat = vec2(dFdx(v_tex_coord.x)*line_width, 0.0);
+	lowp vec2 jhat = vec2(0.0, dFdy(v_tex_coord.y)*line_width);
 
-    //gl_FragColor = vec4(fwidth_field, fwidth_field, fwidth_field, 1.0);
-    lowp float plot_val;
+	highp float field_ll = texture(u_fill_sampler, v_tex_coord).r;
+	highp float field_lr = texture(u_fill_sampler, v_tex_coord + ihat).r;
+	highp float field_ul = texture(u_fill_sampler, v_tex_coord + jhat).r;
+	highp float field_ur = texture(u_fill_sampler, v_tex_coord + ihat+jhat).r;
 
-    if (u_num_contours > 0) {
-        highp float min_contour_diff = u_contour_levels[1] - u_contour_levels[0];
-        bool assigned_contour = false;
-        highp float low_contour;
-        highp float high_contour;
-        highp float highest_contour;
+	highp float field_avg = (field_ll + field_lr + field_ul + field_ur) / 4.0;
+	lowp float max_alpha = 0.0;
 
-        for (int ncnt = 0; ncnt < MAX_N_CONTOURS; ncnt++) {
-            if (ncnt >= u_num_contours) { break; }
+	for (int cntr_id = 0; cntr_id < u_num_contours; ++cntr_id) {
+		lowp float contour_interval = u_contour_levels[cntr_id];
 
-            min_contour_diff = min(min_contour_diff, u_contour_levels[ncnt + 1] - u_contour_levels[ncnt]);
+		int config = 0;
+		// Check the condition for each corner and build the 4-bit index
+		// Bitwise left-shift by 3 to position the bit at the most significant bit
+		config |= int(field_ul > contour_interval) << 3;  
+		config |= int(field_ur > contour_interval) << 2;  // Bitwise left-shift by 2
+		config |= int(field_lr > contour_interval) << 1;  // Bitwise left-shift by 1
+		config |= int(field_ll > contour_interval);  
 
-            if (u_contour_levels[ncnt] < field_val && field_val < u_contour_levels[ncnt + 1]) {
-                assigned_contour = true;
+		// no contour in this 2x2 matrix
+		if ((config == 0) || (config == 15)) {
+			continue;
+		}
+		else {
+			contour_found = 1;
+			max_alpha = field_avg / contour_interval;
+			break;
+		}
+	}
 
-                low_contour = u_contour_levels[ncnt];
-                high_contour = u_contour_levels[ncnt + 1];
-            }
+	if (contour_found == 0) {
+		discard;
+	}
 
-            highest_contour = u_contour_levels[ncnt];
-        }
+	float dash_pattern_x = mod(v_tex_coord.x*2000., 10.0);
+	float dash_pattern_y = mod(v_tex_coord.y*2000., 10.0);
+    //if ((dash_pattern_x < 2.) || (dash_pattern_y < 2.)) {
+    //    discard; // Skip drawing for dashed segments
+    //}
 
-        if (!assigned_contour) {
-            if (field_val < u_contour_levels[0]) {
-                plot_val = (u_contour_levels[0] - field_val) / min_contour_diff;
-            }
-            else if (field_val > highest_contour) {
-                plot_val = (field_val - highest_contour) / min_contour_diff;
-            }
-        }
-        else {
-            plot_val = min(field_val - low_contour, high_contour - field_val) / min_contour_diff;
-        }
-    }
-    else {
-        plot_val = fract(field_val / u_contour_interval);
-        if (plot_val > 0.5) plot_val = 1.0 - plot_val;
-    }
 
-    plot_val = plot_val / (max(0.001, fwidth_field / (u_zoom_fac * 0.125)));
+    fragColor = vec4(0.0, 0.0, 0.0, max_alpha);
 
-    if (plot_val > u_line_cutoff) discard;
-
-    gl_FragColor = vec4(u_color, 1. - (plot_val * plot_val / (u_line_cutoff * u_line_cutoff)));
 }
