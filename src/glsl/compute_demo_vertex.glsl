@@ -1,9 +1,14 @@
 #version 300 es
 
-in vec4 position;
+in float a;
+in float b;
 
-void main()
-{
-	gl_Position = position;
+out float sum;
+out float difference;
+out float product;
+
+void main() {
+  sum = a + b;
+  difference = a - b;
+  product = a * b;
 }
-

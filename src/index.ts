@@ -21,7 +21,7 @@ import {
   pw_td2m,
   redblue
 } from './Colormap';
-import {Compute} from './Compute';
+import Compute from './Compute';
 import Contour, {ContourOptions} from "./Contour";
 import {ContourFill, ContourFillOptions, Raster, RasterOptions} from "./Fill";
 import Hodographs, {HodographOptions} from './Hodographs';
