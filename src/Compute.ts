@@ -12,10 +12,13 @@ const compute_fragment_shader_src =
     require('./glsl/compute_demo_fragment.glsl');
 
 interface ComputeGLElems {
-  program: WGLProgram;
-  vertices: WGLBuffer;
-  input_texture: WGLTexture;
-  texcords: WGLBuffer;
+  program: WebGLProgram;
+  vao: WebGLVertexArrayObject;
+  tf: WebGLTransformFeedback;
+
+  sumBuffer: WebGLBuffer;
+  differenceBuffer: WebGLBuffer;
+  productBuffer: WebGLBuffer; 
 }
 
 const compileAndLinkShaders = (gl: WebGL2RenderingContext, vertex_shader_src: string, frag_shader_src: string): WebGLProgram => {
@@ -84,7 +87,7 @@ const compileAndLinkShaders = (gl: WebGL2RenderingContext, vertex_shader_src: st
 }
 
 
-function makeBuffer(gl: WebGL2RenderingContext, data: TypedArray) {
+function makeBuffer(gl: WebGL2RenderingContext, data: any) {
   const buf = gl.createBuffer();
   gl.bindBuffer(gl.ARRAY_BUFFER, buf);
   gl.bufferData(gl.ARRAY_BUFFER, data, gl.STATIC_DRAW);
@@ -104,35 +107,109 @@ function makeBufferAndSetAttribute(gl: WebGL2RenderingContext, data: TypedArray,
       0,         // stride (0 = auto)
       0,         // offset
   );
+
+  return buf;
 }
 
 
 class Compute<ArrayType extends TypedArray> extends ComputeComponent {
+    public a: Float32Array;
+    public b: Float32Array;
+    public readonly type: 'custom';
+    public readonly id: string;
+    private gl_elems: ComputeGLElems | null;
 
-  private readonly field: RawScalarField<ArrayType>;
-  private gl_elems: ComputeGLElems|null;
 
-  constructor(field: RawScalarField<ArrayType>) {
+  constructor(id: string) {
     super();
-    this.field = field;
+    this.type = 'custom';
+    this.id = id;
+
+    this.a = new Float32Array([1, 2, 3, 4, 5, 6]);
+    this.b = new Float32Array([3, 6, 9, 12, 15, 18]);
+
     this.gl_elems = null;
+
   }
 
 
-  public async setup(map: MapType, gl: WebGL2RenderingContext) {
+  public setup(gl: WebGL2RenderingContext) {
+
+    const {format, type, row_alignment} = getGLFormatTypeAlignment(gl, false);
 
     const program = compileAndLinkShaders(gl, compute_vertex_shader_src, compute_fragment_shader_src);
-	const {format, type, row_alignment} = getGLFormatTypeAlignment(gl, this.field.isFloat16());
 
-	// put data in buffers
-	//const aBuffer = makeBufferAndSetAttribute(gl, new Float32Array(a), aLoc);
-	//const bBuffer = makeBufferAndSetAttribute(gl, new Float32Array(b), bLoc);
+    // Create a vertex array object (attribute state)
+    const vao = gl.createVertexArray();
+    gl.bindVertexArray(vao);
+
+    const aLoc = gl.getAttribLocation(program, 'a');
+    const bLoc = gl.getAttribLocation(program, 'b');
+    const aBuffer = makeBufferAndSetAttribute(gl, this.a, gl.FLOAT, aLoc);
+    const bBuffer = makeBufferAndSetAttribute(gl, this.b, gl.FLOAT, bLoc);
+    // make buffers for output
+    const sumBuffer = makeBuffer(gl, <GLint>(this.a.length * 4));
+    const differenceBuffer = makeBuffer(gl, <GLint>(this.a.length * 4));
+    const productBuffer = makeBuffer(gl, <GLint>(this.a.length * 4));
+
+    // Create and fill out a transform feedback
+    const tf = gl.createTransformFeedback();
+    gl.bindTransformFeedback(gl.TRANSFORM_FEEDBACK, tf);
+     
+     
+    // bind the buffers to the transform feedback
+    gl.bindBufferBase(gl.TRANSFORM_FEEDBACK_BUFFER, 0, sumBuffer);
+    gl.bindBufferBase(gl.TRANSFORM_FEEDBACK_BUFFER, 1, differenceBuffer);
+    gl.bindBufferBase(gl.TRANSFORM_FEEDBACK_BUFFER, 2, productBuffer);
+     
+    gl.bindTransformFeedback(gl.TRANSFORM_FEEDBACK, null);
+     
+    // buffer's we are writing to can not be bound else where
+    gl.bindBuffer(gl.ARRAY_BUFFER, null);  // productBuffer was still bound to ARRAY_BUFFER so unbind it
+
+    this.gl_elems = {
+        program: program, vao: vao, tf: tf, sumBuffer: sumBuffer, productBuffer: productBuffer, differenceBuffer: differenceBuffer
+    };
+  }
+
+  public printResults(gl: WebGL2RenderingContext, buffer: WebGLBuffer, label: string) {
+    const results = new Float32Array(this.a.length);
+    gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
+    gl.getBufferSubData(
+        gl.ARRAY_BUFFER,
+        0,    // byte offset into GPU buffer,
+        results,
+    );
+    // print the results
+    console.log(`${label}: ${results}`);
   }
 
   public compute(gl: WebGL2RenderingContext) {
-    if (this.gl_elems === null)
-      return;
-    const gl_elems = this.gl_elems;
+    if (this.gl_elems === null) return;
+
+    gl.useProgram(this.gl_elems.program);
+     
+    // bind our input attribute state for the a and b buffers
+    gl.bindVertexArray(this.gl_elems.vao);
+     
+    // no need to call the fragment shader
+    //gl.enable(gl.RASTERIZER_DISCARD);
+     
+    gl.bindTransformFeedback(gl.TRANSFORM_FEEDBACK, this.gl_elems.tf);
+    gl.beginTransformFeedback(gl.POINTS);
+    gl.drawArrays(gl.POINTS, 0, this.a.length);
+    gl.endTransformFeedback();
+    gl.bindTransformFeedback(gl.TRANSFORM_FEEDBACK, null);
+     
+    // turn on using fragment shaders again
+    //gl.disable(gl.RASTERIZER_DISCARD);
+
+    console.log(`a: ${this.a}`);
+    console.log(`b: ${this.b}`);
+     
+    this.printResults(gl, this.gl_elems.sumBuffer, 'sums');
+    this.printResults(gl, this.gl_elems.differenceBuffer, 'differences');
+    this.printResults(gl, this.gl_elems.productBuffer, 'products');
   }
 }
 

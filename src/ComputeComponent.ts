@@ -10,8 +10,8 @@ const worker =
 const compute_layer_worker = Comlink.wrap<ComputeComponentWorker>(worker);
 
 abstract class ComputeComponent {
-  abstract setup(map: MapType, gl: WebGL2RenderingContext): Promise<void>;
-  abstract compute(gl: WebGL2RenderingContext): void;
+  public abstract setup(gl: WebGLAnyRenderingContext) : void;
+  public abstract compute(gl: WebGLAnyRenderingContext) : void;
 }
 
 export {ComputeComponent, compute_layer_worker};
