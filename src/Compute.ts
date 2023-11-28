@@ -6,6 +6,8 @@ import {MapType} from './Map';
 import {getGLFormatTypeAlignment} from './PlotComponent';
 import {RawScalarField} from './RawField';
 import {Cache, hex2rgba} from './utils';
+import { Float16Array, isFloat16Array } from "@petamoriken/float16";
+
 
 const compute_vertex_shader_src = require('./glsl/compute_demo_vertex.glsl');
 const compute_fragment_shader_src =
@@ -135,7 +137,7 @@ class Compute<ArrayType extends TypedArray> extends ComputeComponent {
 
   public setup(gl: WebGL2RenderingContext) {
 
-    const {format, type, row_alignment} = getGLFormatTypeAlignment(gl, false);
+    const {format, type, row_alignment} = getGLFormatTypeAlignment(gl, true);
 
     const program = compileAndLinkShaders(gl, compute_vertex_shader_src, compute_fragment_shader_src);
 
