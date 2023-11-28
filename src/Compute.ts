@@ -193,7 +193,7 @@ class Compute<ArrayType extends TypedArray> extends ComputeComponent {
     gl.bindVertexArray(this.gl_elems.vao);
      
     // no need to call the fragment shader
-    //gl.enable(gl.RASTERIZER_DISCARD);
+    gl.enable(gl.RASTERIZER_DISCARD);
      
     gl.bindTransformFeedback(gl.TRANSFORM_FEEDBACK, this.gl_elems.tf);
     gl.beginTransformFeedback(gl.POINTS);
@@ -202,7 +202,7 @@ class Compute<ArrayType extends TypedArray> extends ComputeComponent {
     gl.bindTransformFeedback(gl.TRANSFORM_FEEDBACK, null);
      
     // turn on using fragment shaders again
-    //gl.disable(gl.RASTERIZER_DISCARD);
+    gl.disable(gl.RASTERIZER_DISCARD);
 
     console.log(`a: ${this.a}`);
     console.log(`b: ${this.b}`);
